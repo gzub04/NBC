@@ -51,7 +51,7 @@ class NBC:
         -
         :return: Nothing
         """
-        self.df.rename(columns={self.features_no + 1: 'class_no'}, inplace=True)
+        self.df.rename(columns={self.features_no: 'class_no'}, inplace=True)
         data_df = self.df.iloc[:, :-1]
         self.df.iloc[:, :-1] = (data_df - data_df.min()) / (data_df.max() - data_df.min())
 
@@ -60,6 +60,7 @@ class NBC:
         self.df.sort_values(by='distance', ascending=True, inplace=True)
 
         self.df['r-k-nearest'] = 0
+        self.df['NDF'] = 0.0
 
     def gower_distance(self, idx_1, idx_2, ):
         x1 = self.df.iloc[idx_1]
@@ -151,4 +152,7 @@ class NBC:
             # reverse k-neighbours
             for index in k_nearest[i]:
                 self.df.loc[index, 'r-k-nearest'] += 1
-        self.df.insert = k_nearest
+        self.df['k-nearest'] = k_nearest
+        # calculate NDF
+        for i in range(1261):
+            self.df.loc[i, 'NDF'] = self.df.loc[i, 'r-k-nearest'] / self.df.loc[i, 'k-nearest'].size
