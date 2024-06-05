@@ -1,13 +1,26 @@
 import pandas as pd
 import numpy as np
 import scipy
+import time
+
+
+def timer(func):
+    def wrapper(*args, **kwargs):
+        start = time.time()
+        result = func(*args, **kwargs)
+        end = time.time()
+        print(f'[{func.__name__}] Time taken: {(end - start):.4f} seconds')
+        return result
+    return wrapper
 
 
 class NBC:
     def __init__(self, df=None, k=None):
         self.features_no = 0
-        if isinstance(df, pd.DataFrame) or df is None:
-            self.df = df
+        if isinstance(df, pd.DataFrame):
+            self.df = df.copy()
+        elif df is None:
+            self.df = None
         else:
             raise TypeError('Given variable is not of pandas DataFrame type')
 
@@ -18,7 +31,7 @@ class NBC:
 
     def set_df(self, df):
         if isinstance(df, pd.DataFrame):
-            self.df = df
+            self.df = df.copy()
         else:
             raise TypeError('Given variable is not of pandas DataFrame type')
 
@@ -179,7 +192,8 @@ class NBC:
                     true_negatives += 1
         return (true_positives + true_negatives) / scipy.special.binom(len(self.df.index), 2)
 
-    def fit(self, x, y):
+    @timer
+    def fit(self):
         if self.check_data() is False:
             return
 
