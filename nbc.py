@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import scipy
 
 
 class NBC:
@@ -60,9 +61,10 @@ class NBC:
         self.df.sort_values(by='distance', ascending=True, inplace=True)
 
         self.df['r-k-nearest'] = 0
-        self.df['NDF'] = 0.0
+        self.df['NDF'] = np.nan  # defaults to float
+        self.df['grouping'] = -1
 
-    def gower_distance(self, idx_1, idx_2, ):
+    def _gower_distance(self, idx_1, idx_2):
         x1 = self.df.iloc[idx_1]
         x2 = self.df.iloc[idx_2]
         numerator = 0
@@ -72,8 +74,8 @@ class NBC:
                 numerator += 1
             else:
                 if x1[feature_idx] != x2[feature_idx]:
-                    numerator += abs(x1[feature_idx] - x2[feature_idx])
-        return numerator / self.features_no  # -2, bo dwie (ostatnie) kolumny nie są danymi
+                    numerator += np.abs(x1[feature_idx] - x2[feature_idx])
+        return numerator / self.features_no
 
     def _k_nearest_neighbors(self, data_idx):
         nearest_neighbors = np.empty(shape=self.k, dtype=int)
@@ -84,6 +86,9 @@ class NBC:
         lowest_index_reached = False
         highest_index_reached = False
         eps = [0, 0]  # [local index, epsilon]
+
+        if data_idx == 291:
+            print('hi')
 
         # Initial values for nearest neighbours
         for i in range(self.k):
@@ -111,7 +116,7 @@ class NBC:
                 nearest_neighbors[i] = data_idx + offset_higher
                 offset_higher += 1
 
-            gower_distances[i] = self.gower_distance(data_idx, nearest_neighbors[i])
+            gower_distances[i] = self._gower_distance(data_idx, nearest_neighbors[i])
             if eps[1] < gower_distances[i]:
                 eps[0] = i
                 eps[1] = gower_distances[i]
@@ -131,14 +136,53 @@ class NBC:
             else:
                 break
 
-            distance = self.gower_distance(data_idx, potential_idx)
+            distance = self._gower_distance(data_idx, potential_idx)
             if distance < eps[1]:
                 nearest_neighbors[eps[0]] = potential_idx
                 gower_distances[eps[0]] = distance
                 eps[0] = np.argmax(gower_distances)
                 eps[1] = gower_distances[eps[0]]
+            elif distance == eps[1]:
+                nearest_neighbors = nearest_neighbors.append(potential_idx)
+
+        if self.df.loc[data_idx, 1] < 0.1:
+            for neighbour in nearest_neighbors:
+                if self.df.iloc[neighbour, 1] > 0.1:
+                    pass
 
         return nearest_neighbors
+
+    def _assign_group(self, group_num, idx):
+        """
+        Assigns group number to a data point
+        :param group_num: Group number that will be assigned
+        :param idx: index of currently processed data point
+        :return: True if group was assigned, False if not
+        """
+        if self.df.loc[idx, 'grouping'] == -1:
+            self.df.loc[idx, 'grouping'] = group_num
+
+            if self.df.loc[idx, 'NDF'] >= 1:
+                for neighbour in self.df.loc[idx, 'k-nearest']:
+                    self._assign_group(group_num, neighbour)
+            return True
+        return False
+
+    def rand_metric(self):
+        """
+        :return: Rand metric
+        """
+        true_positives = 0
+        true_negatives = 0
+        for i in range(len(self.df.index)):
+            for j in range(i + 1, len(self.df.index)):
+                if (self.df.loc[i, 'grouping'] == self.df.loc[j, 'grouping'] and
+                        self.df.loc[i, 'class_no'] == self.df.loc[j, 'class_no']):
+                    true_positives += 1
+                elif (self.df.loc[i, 'grouping'] != self.df.loc[j, 'grouping'] and
+                        self.df.loc[i, 'class_no'] != self.df.loc[j, 'class_no']):
+                    true_negatives += 1
+        return (true_positives + true_negatives) / scipy.special.binom(len(self.df.index), 2)
 
     def fit(self, x, y):
         if self.check_data() is False:
@@ -147,12 +191,20 @@ class NBC:
         self._tidy_data()
 
         k_nearest = pd.Series([np.array] * len(self.df.index))
-        for i in range(1261):
+        for i in range(len(self.df.index)):
             k_nearest[i] = self._k_nearest_neighbors(i)
             # reverse k-neighbours
             for index in k_nearest[i]:
                 self.df.loc[index, 'r-k-nearest'] += 1
         self.df['k-nearest'] = k_nearest
+
         # calculate NDF
-        for i in range(1261):
+        for i in range(len(self.df.index)):
             self.df.loc[i, 'NDF'] = self.df.loc[i, 'r-k-nearest'] / self.df.loc[i, 'k-nearest'].size
+
+        # grouping
+        current_group = 0
+        for i in range(len(self.df.index)):
+            if self.df.loc[i, 'NDF'] >= 1 and self._assign_group(current_group, i):
+                current_group += 1
+
