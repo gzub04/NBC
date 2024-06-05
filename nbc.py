@@ -49,7 +49,8 @@ class NBC:
         - renames the column with true classifications to class_no
         - normalize data
         - reorders columns according to manhattan distance and saves them in new column 'distance'
-        -
+        - adds necessary columns
+        - resets index
         :return: Nothing
         """
         self.df.rename(columns={self.features_no: 'class_no'}, inplace=True)
@@ -63,6 +64,8 @@ class NBC:
         self.df['r-k-nearest'] = 0
         self.df['NDF'] = np.nan  # defaults to float
         self.df['grouping'] = -1
+
+        self.df.reset_index(drop=True, inplace=True)
 
     def _gower_distance(self, idx_1, idx_2):
         x1 = self.df.iloc[idx_1]
@@ -86,9 +89,6 @@ class NBC:
         lowest_index_reached = False
         highest_index_reached = False
         eps = [0, 0]  # [local index, epsilon]
-
-        if data_idx == 291:
-            print('hi')
 
         # Initial values for nearest neighbours
         for i in range(self.k):
@@ -144,11 +144,6 @@ class NBC:
                 eps[1] = gower_distances[eps[0]]
             elif distance == eps[1]:
                 nearest_neighbors = nearest_neighbors.append(potential_idx)
-
-        if self.df.loc[data_idx, 1] < 0.1:
-            for neighbour in nearest_neighbors:
-                if self.df.iloc[neighbour, 1] > 0.1:
-                    pass
 
         return nearest_neighbors
 
