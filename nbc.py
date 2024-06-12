@@ -1,20 +1,13 @@
 import pandas as pd
+from pandas.api.types import is_numeric_dtype
 import numpy as np
 import scipy
-import time
-
-
-def timer(func):
-    def wrapper(*args, **kwargs):
-        start = time.time()
-        result = func(*args, **kwargs)
-        end = time.time()
-        print(f'[{func.__name__}] Time taken: {(end - start):.4f} seconds')
-        return result
-    return wrapper
 
 
 class NBC:
+    """
+    Assumes true values are in the last row
+    """
     def __init__(self, df=None, k=None):
         self.features_no = 0
         if isinstance(df, pd.DataFrame):
@@ -56,6 +49,17 @@ class NBC:
         self.features_no = len(self.df.columns) - 1
         return is_correct
 
+    def calculate_manhattan_distance(self):
+        """
+        :return: Manhattan distance
+        """
+        distances = pd.Series(np.zeros(shape=len(self.df.index)), name='distance')
+        for row in self.df.index:
+            for col in self.df.columns:
+                if is_numeric_dtype(self.df[col].dtype):
+                    distances[row] += self.df.loc[row, col]
+        self.df = pd.concat([self.df, distances.T], axis=1)
+
     def _tidy_data(self):
         """
         Takes a pandas dataframe and:
@@ -66,17 +70,20 @@ class NBC:
         - resets index
         :return: Nothing
         """
-        self.df.rename(columns={self.features_no: 'class_no'}, inplace=True)
-        data_df = self.df.iloc[:, :-1]
-        self.df.iloc[:, :-1] = (data_df - data_df.min()) / (data_df.max() - data_df.min())
+        self.df.rename(columns={self.df.columns[self.features_no]: 'class_no'}, inplace=True)
+        df_num = self.df.iloc[:, :-1].select_dtypes(include='number')
+        df_norm = (df_num - df_num.min()) / (df_num.max() - df_num.min())
+        if not df_norm.empty:
+            self.df[df_norm.columns] = df_norm
 
-        manhattan_distances = self.df.iloc[:, :-1].sum(axis=1)
-        self.df['distance'] = manhattan_distances
+        self.calculate_manhattan_distance()
         self.df.sort_values(by='distance', ascending=True, inplace=True)
 
-        self.df['r-k-nearest'] = 0
-        self.df['NDF'] = np.nan  # defaults to float
-        self.df['grouping'] = -1
+        r_k_nearest = pd.Series(np.full(len(self.df.index), 0), name='r-k-nearest')
+        NDF = pd.Series(np.full(len(self.df.index), np.nan), name='NDF')
+        grouping = pd.Series(np.full(len(self.df.index), -1), name='grouping')
+
+        self.df = pd.concat([self.df, r_k_nearest.T, NDF.T, grouping.T], axis=1)
 
         self.df.reset_index(drop=True, inplace=True)
 
@@ -86,11 +93,11 @@ class NBC:
         numerator = 0
         for feature_idx in range(self.features_no):
             feature_type = self.df.iloc[:, feature_idx].dtype
-            if feature_type == 'object' and x1[feature_idx] != x2[feature_idx]:
-                numerator += 1
-            else:
+            if not is_numeric_dtype(feature_type):
                 if x1[feature_idx] != x2[feature_idx]:
-                    numerator += np.abs(x1[feature_idx] - x2[feature_idx])
+                    numerator += 1
+            else:
+                numerator += np.abs(x1.iloc[feature_idx] - x2.iloc[feature_idx])
         return numerator / self.features_no
 
     def _k_nearest_neighbors(self, data_idx):
@@ -155,8 +162,8 @@ class NBC:
                 gower_distances[eps[0]] = distance
                 eps[0] = np.argmax(gower_distances)
                 eps[1] = gower_distances[eps[0]]
-            elif distance == eps[1]:
-                nearest_neighbors = nearest_neighbors.append(potential_idx)
+            # elif distance == eps[1]:  # k+ neighbours can cause recursion limit error
+            #     nearest_neighbors = np.append(nearest_neighbors, potential_idx)
 
         return nearest_neighbors
 
@@ -192,7 +199,6 @@ class NBC:
                     true_negatives += 1
         return (true_positives + true_negatives) / scipy.special.binom(len(self.df.index), 2)
 
-    @timer
     def fit(self):
         if self.check_data() is False:
             return
