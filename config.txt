@@ -1,0 +1,4 @@
+dataset path: ./datasets/2d-20c-no0.arff
+k value: 23
+entry multiplier: 1
+attribute multiplier: 1-50
